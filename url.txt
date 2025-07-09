@@ -1215,3 +1215,6 @@ syarousi-search.com
 nf-eletronica.org
 relay[.]lombrelone.com
 webrelayapi.online
+qilinleaks.onion
+decrypt-qilin.com
+agenda-support.com
