@@ -1,0 +1,33 @@
+name: ORDER SOC - IOC Intelligence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-structure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validar estructura del proyecto
+        run: |
+          test -f scripts/collect_ioc.py
+          test -f scripts/validate_ioc.py
+          test -f scripts/publish_ioc.py
+
+          test -f feeds/ips-critical.txt
+          test -f feeds/ips-suspicious.txt
+          test -f feeds/domains-malicious.txt
+          test -f feeds/hashes-sha256.txt
+
+          echo "ORDER SOC - Estructura validada correctamente"
