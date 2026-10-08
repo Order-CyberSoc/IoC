@@ -1,33 +1,67 @@
-name: ORDER SOC - IOC Intelligence
+name: ORDER SOC - IOC Pilot (revision sin bloqueo)
 
 on:
+  push:
+    branches: [feeds]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/update-ioc.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  verify-structure:
-    runs-on: ubuntu-latest
+concurrency:
+  group: order-soc-ioc-pilot-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
+  collect-and-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Descargar repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Validar estructura del proyecto
+      - name: Validar existencia de archivos
         run: |
           test -f scripts/collect_ioc.py
           test -f scripts/validate_ioc.py
           test -f scripts/publish_ioc.py
-
           test -f feeds/ips-critical.txt
           test -f feeds/ips-suspicious.txt
           test -f feeds/domains-malicious.txt
           test -f feeds/hashes-sha256.txt
 
-          echo "ORDER SOC - Estructura validada correctamente"
+      - name: Verificar Auth-Key
+        env:
+          ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
+        run: |
+          if [ -z "$ABUSECH_AUTH_KEY" ]; then
+            echo 'ERROR: configurar Actions Secret ABUSECH_AUTH_KEY antes de ejecutar.'
+            exit 1
+          fi
+
+      - name: Recolectar ThreatFox y URLhaus
+        env:
+          ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
+        run: python scripts/collect_ioc.py --days 1
+
+      - name: Validar y clasificar
+        run: python scripts/validate_ioc.py
+
+      - name: Preparar archivos solo para revision
+        run: python scripts/publish_ioc.py
+
+      - name: Guardar resultados en Artifacts (sin publicar en main)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORDER-SOC-IOC-Review
+          path: build/staging/
+          retention-days: 7
+          if-no-files-found: error
