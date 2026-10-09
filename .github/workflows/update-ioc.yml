@@ -1,0 +1,142 @@
+name: ORDER SOC - IOC Intelligence v2 (revision sin bloqueo)
+
+on:
+  # Pruebas sobre la rama feeds (sin publicar nada en main)
+  push:
+    branches: [feeds]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/update-ioc.yml'
+  workflow_dispatch:
+  # Cada hora a los 17 minutos (UTC). SOLO se ejecuta en la rama predeterminada: main.
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order-soc-ioc-v2
+  cancel-in-progress: false
+
+jobs:
+  collect-and-review:
+    name: Recolectar y validar sin bloqueos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Instalar Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verificar archivos
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/collect_ioc.py
+          test -f scripts/validate_ioc.py
+          test -f scripts/publish_ioc.py
+          test -f feeds/ips-critical.txt
+          test -f feeds/ips-suspicious.txt
+          test -f feeds/domains-malicious.txt
+          test -f feeds/hashes-sha256.txt
+
+      - name: Probar scripts v2
+        run: python -m unittest discover -s tests -v
+
+      - name: Importar historial desde rama aislada ioc-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          if git ls-remote --exit-code --heads origin ioc-state >/dev/null; then
+            git fetch --no-tags origin refs/heads/ioc-state:refs/remotes/origin/ioc-state
+            git show origin/ioc-state:data/ioc-history.json > build/previous_history.json
+          else
+            printf '{"schema_version":2,"indicators":{}}\n' > build/previous_history.json
+          fi
+
+      - name: Verificar Auth-Key
+        shell: bash
+        env:
+          ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
+        run: |
+          if [ -z "$ABUSECH_AUTH_KEY" ]; then
+            echo 'ERROR: falta ABUSECH_AUTH_KEY en Repository secrets.'
+            exit 1
+          fi
+
+      - name: Consultar ThreatFox y URLhaus
+        env:
+          ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
+        run: python scripts/collect_ioc.py --days 1
+
+      - name: Validar IOC y conservar puertos
+        run: python scripts/validate_ioc.py
+
+      - name: Preparar feeds e historial para revision
+        run: python scripts/publish_ioc.py --history build/previous_history.json
+
+      - name: Subir resultados para revision SOC
+        uses: actions/upload-artifact@v6
+        with:
+          name: ORDER-SOC-IOC-Review-v2
+          path: build/staging/
+          retention-days: 14
+          if-no-files-found: error
+
+  # Solo la ejecucion programada sobre main puede guardar el historial en ioc-state.
+  # Este job NO modifica main, ips.txt, url.txt ni los feeds de produccion.
+  persist-history:
+    name: Guardar historial en rama aislada
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    needs: collect-and-review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Descargar repositorio (para rama de estado)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Descargar artefactos v2
+        uses: actions/download-artifact@v6
+        with:
+          name: ORDER-SOC-IOC-Review-v2
+          path: build/staging/
+
+      - name: Publicar SOLO data/ioc-history.json en ioc-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build/staging/data/ioc-history.json "$RUNNER_TEMP/ioc-history.json"
+          git config user.name 'Order SOC Bot'
+          git config user.email 'order-soc-bot@users.noreply.github.com'
+
+          if git ls-remote --exit-code --heads origin ioc-state >/dev/null; then
+            git fetch --no-tags origin refs/heads/ioc-state:refs/remotes/origin/ioc-state
+            git switch --create ioc-state --track origin/ioc-state
+          else
+            git switch --orphan ioc-state
+            git rm -rf --cached . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p data
+          cp "$RUNNER_TEMP/ioc-history.json" data/ioc-history.json
+          git add data/ioc-history.json
+          if git diff --cached --quiet; then
+            echo 'Historial sin cambios.'
+          else
+            git commit -m 'chore(ioc): actualizar historial v2 [skip ci]'
+            git push origin HEAD:refs/heads/ioc-state
+          fi
