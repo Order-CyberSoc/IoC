@@ -1,4 +1,4 @@
-name: ORDER SOC - IOC Intelligence v2 (revision sin bloqueo)
+name: ORDER SOC - IOC Intelligence v2.1 (revision y auditoria)
 
 on:
   # Pruebas sobre la rama feeds (sin publicar nada en main)
@@ -43,6 +43,8 @@ jobs:
           test -f scripts/collect_ioc.py
           test -f scripts/validate_ioc.py
           test -f scripts/publish_ioc.py
+          test -f scripts/audit_ioc.py
+          test -f tests/test_audit_ioc.py
           test -f feeds/ips-critical.txt
           test -f feeds/ips-suspicious.txt
           test -f feeds/domains-malicious.txt
@@ -84,10 +86,13 @@ jobs:
       - name: Preparar feeds e historial para revision
         run: python scripts/publish_ioc.py --history build/previous_history.json
 
+      - name: Generar auditoria de riesgos y cola SOC (sin bloqueos)
+        run: python scripts/audit_ioc.py
+
       - name: Subir resultados para revision SOC
         uses: actions/upload-artifact@v6
         with:
-          name: ORDER-SOC-IOC-Review-v2
+          name: ORDER-SOC-IOC-Review-v2-1
           path: build/staging/
           retention-days: 14
           if-no-files-found: error
@@ -112,7 +117,7 @@ jobs:
       - name: Descargar artefactos v2
         uses: actions/download-artifact@v6
         with:
-          name: ORDER-SOC-IOC-Review-v2
+          name: ORDER-SOC-IOC-Review-v2-1
           path: build/staging/
 
       - name: Publicar SOLO data/ioc-history.json en ioc-state
