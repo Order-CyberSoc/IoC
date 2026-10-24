@@ -1,0 +1,144 @@
+name: ORDER SOC - Reporte diario altas y bajas IOC v2.2
+
+on:
+  # Pruebas de codigo en la rama de desarrollo. No persiste reportes.
+  push:
+    branches: [feeds]
+    paths:
+      - 'scripts/daily_ioc_report.py'
+      - 'tests/test_daily_ioc_report.py'
+      - '.github/workflows/daily-ioc-report.yml'
+  # Prueba manual en main o feeds. No persiste el reporte.
+  workflow_dispatch:
+  # Un intento diario 09:37 hora Chile, con ajuste de horario de verano.
+  # GitHub puede retrasar u omitir ejecuciones programadas.
+  schedule:
+    - cron: '37 9 * * *'
+      timezone: 'America/Santiago'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order-soc-daily-report
+  cancel-in-progress: false
+
+jobs:
+  generate-report:
+    name: Calcular diferencias y generar reporte diario (solo lectura)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verificar codigo y pruebas
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/daily_ioc_report.py
+          python -m unittest discover -s tests -p 'test_daily_ioc_report.py' -v
+
+      - name: Leer historial IOC y ultimo snapshot diario
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          git fetch --no-tags origin refs/heads/ioc-state:refs/remotes/origin/ioc-state
+          git show origin/ioc-state:data/ioc-history.json > build/current-history.json
+          if git cat-file -e origin/ioc-state:reports/latest-snapshot.json 2>/dev/null; then
+            git show origin/ioc-state:reports/latest-snapshot.json > build/previous-snapshot.json
+          fi
+          test -s build/current-history.json
+
+      - name: Generar reporte diario con altas y bajas
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -s build/previous-snapshot.json ]; then
+            python scripts/daily_ioc_report.py \
+              --current build/current-history.json \
+              --previous build/previous-snapshot.json \
+              --output build/daily-report
+          else
+            python scripts/daily_ioc_report.py \
+              --current build/current-history.json \
+              --output build/daily-report
+          fi
+          cat build/daily-report/daily-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar reporte descargable (sin modificar feeds)
+        uses: actions/upload-artifact@v6
+        with:
+          name: ORDER-SOC-Reporte-Diario-IOC
+          path: build/daily-report/
+          retention-days: 30
+          if-no-files-found: error
+
+  # Persistir solo ejecuciones PROGRAMADAS desde main.
+  # No actualiza ips.txt, URL, hashes, objetos FortiGate ni listas de bloqueo.
+  persist-daily-report:
+    name: Archivar reporte diario en ioc-state
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    needs: generate-report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout con permisos de escritura solo en este trabajo
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+
+      - name: Descargar reporte del trabajo anterior
+        uses: actions/download-artifact@v6
+        with:
+          name: ORDER-SOC-Reporte-Diario-IOC
+          path: build/daily-report/
+
+      - name: Archivar snapshot, Markdown y CSV en ioc-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT_DATE=$(python3 -c "import json; print(json.load(open('build/daily-report/summary.json'))['date_local'])")
+          case "$REPORT_DATE" in
+            ????-??-??) ;;
+            *) echo 'Fecha de reporte inválida'; exit 1;;
+          esac
+
+          git config user.name 'Order SOC Bot'
+          git config user.email 'order-soc-bot@users.noreply.github.com'
+          git fetch --no-tags origin refs/heads/ioc-state:refs/remotes/origin/ioc-state
+          git switch --create daily-reports --track origin/ioc-state
+
+          if [ -f "reports/daily/$REPORT_DATE/daily-report.md" ]; then
+            echo "Reporte del dia $REPORT_DATE ya archivado; no reemplazar snapshot ni rehacer delta."
+            exit 0
+          fi
+
+          mkdir -p "reports/daily/$REPORT_DATE"
+          cp build/daily-report/daily-report.md "reports/daily/$REPORT_DATE/daily-report.md"
+          cp build/daily-report/summary.json "reports/daily/$REPORT_DATE/summary.json"
+          cp build/daily-report/added.csv "reports/daily/$REPORT_DATE/added.csv"
+          cp build/daily-report/removed.csv "reports/daily/$REPORT_DATE/removed.csv"
+          cp build/daily-report/snapshot.json reports/latest-snapshot.json
+          git add reports/
+          git commit -m "chore(soc): reporte diario IOC $REPORT_DATE [skip ci]"
+          for attempt in 1 2 3; do
+            git pull --rebase origin ioc-state
+            if git push origin HEAD:refs/heads/ioc-state; then
+              echo "Reporte archivado: reports/daily/$REPORT_DATE"
+              exit 0
+            fi
+            echo "Reintentando actualización de historial ($attempt/3)."
+          done
+          echo 'No fue posible actualizar ioc-state después de 3 intentos.' >&2
+          exit 1
