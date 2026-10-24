@@ -1,0 +1,8 @@
+{
+  "brand_name": "ORDER TECHNOLOGY",
+  "client_name": "Informe general de inteligencia",
+  "classification": "Uso externo autorizado · Sin datos de clientes",
+  "logo_path": "assets/order-wordmark.svg",
+  "executive_note": "Durante el período se consolidó inteligencia de amenazas de fuentes externas para priorizar actividades de monitoreo y respuesta del SOC. Este documento describe el universo de IOC observado, sin atribuir actividad a equipos de un cliente específico.",
+  "footer": "ORDER SOC · Cyber Threat Intelligence"
+}
