@@ -1,4 +1,4 @@
-[IOC_Gobernanza_ORDER_SOC.md](https://github.com/user-attachments/files/33895946/IOC_Gobernanza_ORDER_SOC.md)
+[Uploading IOC_Gobernanza_ORDER_SOC.md…]()
 # ORDER TECHNOLOGY · Procedimiento SOC-CTI-001
 
 **Gestión de indicadores de compromiso (IOC) — v2.3**  
