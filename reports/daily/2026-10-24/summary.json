@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "mode": "BASELINE",
+  "date_local": "2026-10-24",
+  "timezone": "America/Santiago",
+  "generated_at_utc": "2026-10-24T16:13:23.530590+00:00",
+  "source_last_update_utc": "2026-10-24T14:31:40.464080+00:00",
+  "previous_snapshot_date": null,
+  "snapshot_interval_hours": null,
+  "count_current": 13128,
+  "current_by_type": {
+    "ip": 1238,
+    "domain": 5960,
+    "sha256": 5930
+  },
+  "count_added": 0,
+  "added_by_type": {
+    "ip": 0,
+    "domain": 0,
+    "sha256": 0
+  },
+  "count_removed": 0,
+  "removed_by_type": {
+    "ip": 0,
+    "domain": 0,
+    "sha256": 0
+  },
+  "removed_due_ttl": 0,
+  "approved_for_block": 0,
+  "production_feeds_changed": false,
+  "note": "Primer snapshot: establece línea base; NO atribuir todas las entradas a altas del día."
+}
