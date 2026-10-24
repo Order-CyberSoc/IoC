@@ -1,0 +1,88 @@
+name: ORDER SOC - Reporte semanal corporativo IOC v2.3
+
+on:
+  push:
+    branches: [feeds]
+    paths:
+      - 'scripts/weekly_client_report.py'
+      - 'scripts/ioc_lifecycle.py'
+      - 'tests/test_weekly_client_report.py'
+      - 'tests/test_ioc_lifecycle.py'
+      - 'templates/**'
+      - 'config/branding.json'
+      - 'assets/**'
+      - '.github/workflows/weekly-client-report.yml'
+  workflow_dispatch:
+    inputs:
+      as_of:
+        description: 'Fecha de referencia opcional YYYY-MM-DD; calcula la semana anterior cerrada'
+        required: false
+        type: string
+  # Lunes 08:47 horas de Chile; puede sufrir retrasos por GitHub.
+  # Schedule solo se ejecuta en la rama predeterminada main.
+  schedule:
+    - cron: '47 8 * * 1'
+      timezone: 'America/Santiago'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order-soc-weekly-report-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  weekly-report:
+    name: Generar informe ejecutivo sin bloqueos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Preparar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Comprobar scripts y pruebas
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_weekly_client_report.py' -v
+          python -m unittest discover -s tests -p 'test_ioc_lifecycle.py' -v
+          test -s templates/weekly_report_client.html
+          test -s config/branding.json
+          test -s assets/order-wordmark.svg
+
+      - name: Leer reportes diarios desde ioc-state en modo solo lectura
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          git fetch --no-tags origin refs/heads/ioc-state:refs/remotes/origin/ioc-state
+          git worktree add --detach build/ioc-state origin/ioc-state
+          test -f build/ioc-state/data/ioc-history.json
+
+      - name: Consolidar la semana previa y generar HTML
+        shell: bash
+        env:
+          AS_OF: ${{ inputs.as_of }}
+        run: |
+          set -euo pipefail
+          if [ -n "$AS_OF" ]; then
+            python scripts/weekly_client_report.py --as-of "$AS_OF" --out build/weekly-report
+          else
+            python scripts/weekly_client_report.py --out build/weekly-report
+          fi
+          cat build/weekly-report/weekly-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir informe semanal para revisión y descarga
+        uses: actions/upload-artifact@v6
+        with:
+          name: ORDER-SOC-Informe-Semanal-v2-3
+          path: build/weekly-report/
+          retention-days: 90
+          if-no-files-found: error
