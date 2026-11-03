@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "mode": "DELTA",
+  "date_local": "2026-11-03",
+  "timezone": "America/Santiago",
+  "generated_at_utc": "2026-11-03T19:46:54.309776+00:00",
+  "source_last_update_utc": "2026-11-03T18:26:15.398790+00:00",
+  "previous_snapshot_date": "2026-11-02",
+  "snapshot_interval_hours": 21.87,
+  "count_current": 28910,
+  "current_by_type": {
+    "ip": 2115,
+    "domain": 13731,
+    "sha256": 13064
+  },
+  "count_added": 1275,
+  "added_by_type": {
+    "ip": 119,
+    "domain": 703,
+    "sha256": 453
+  },
+  "count_removed": 526,
+  "removed_by_type": {
+    "ip": 358,
+    "domain": 168,
+    "sha256": 0
+  },
+  "removed_due_ttl": 526,
+  "approved_for_block": 0,
+  "production_feeds_changed": false,
+  "note": "Diferencias entre snapshots diarios, NO equivalen a bloqueos en FortiGate."
+}
